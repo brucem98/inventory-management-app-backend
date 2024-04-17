@@ -1,4 +1,5 @@
 import express from "express";
+import postgraphile from "postgraphile";
 import { AppDataSource } from "./data-source";
 import { Product } from "./entity/Product";
 import { Category } from "./entity/Category";
@@ -6,6 +7,51 @@ import { Subcategory } from "./entity/Subcategory";
 import { Supplier } from "./entity/Supplier";
 import { Uom } from "./entity/Uom";
 import { Warehouse } from "./entity/Warehouse";
+
+import { makeExtendSchemaPlugin, gql } from "graphile-utils"
+import { registerTransaction } from "./service/inventory";
+
+import cors from 'cors';
+
+const RegisterTransactionPlugin = makeExtendSchemaPlugin(_build => {
+  return {
+    typeDefs: gql `
+      input RegisterTransactionInput {
+        type: InventoryTransactionTypeEnum!
+        productId: Int!
+        warehouseId: Int!
+        quantity: Int!
+      }
+
+      type RegisterTransactionPayload {
+        transactionId: Int,
+        productId: Int,
+        warehouseId: Int,
+        updatedQuantity: Int,
+      }
+
+      extend type Mutation {
+        registerTransaction(input: RegisterTransactionInput!): RegisterTransactionPayload
+      }
+    `,
+    resolvers: {
+      Mutation: {
+        registerTransaction: async (_query, args, _context, _resolveInfo) => {
+          try {
+            const { type, productId, warehouseId, quantity } = args.input
+            const inventoryTransaction = await registerTransaction(type, productId, warehouseId, quantity)
+            return { ...inventoryTransaction }
+          } catch (e) {
+            console.error('Error registering transaction', e)
+            throw e
+          }
+        }
+      }
+    }
+  }
+})
+
+const pgUser = "xifkwbke "
 
 /**
  * This is our main entry point of our Express server.
@@ -19,6 +65,13 @@ import { Warehouse } from "./entity/Warehouse";
 const App = () => {
   const app = express();
   app.use(express.json());
+  app.use(cors())
+  app.use(postgraphile("postgres://xifkwbke:83Uq29ghREmVLdnDWkKYMluthOe_rqrt@flora.db.elephantsql.com/xifkwbke", "public", {
+    watchPg: true,
+    graphiql: true,
+    enhanceGraphiql: true,
+    appendPlugins: [RegisterTransactionPlugin],
+  }))
 
   app.get("/api/v1/hello", async (req, res, next) => {
     res.send("success");
